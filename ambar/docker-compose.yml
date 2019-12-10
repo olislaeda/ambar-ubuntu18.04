@@ -1,0 +1,144 @@
+version: "2.1"
+networks:
+  internal_network:
+services:    
+  db:
+    restart: always
+    networks:
+      - internal_network
+    build: ./MongoDB
+    environment:
+      - cacheSizeGB=2
+    volumes:
+      - /opt/ambar/db:/data/db
+    expose:
+      - "27017"
+  es:
+    restart: always
+    networks:
+      - internal_network
+    build: ./ElasticSearch
+    expose:
+      - "9200"
+    environment:
+      - cluster.name=ambar-es
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - /opt/ambar/es:/usr/share/elasticsearch/data
+  rabbit:
+    restart: always
+    networks:
+      - internal_network
+    build: ./Rabbit
+    hostname: rabbit
+    expose:
+      - "15672"
+      - "5672"
+    volumes:
+      - /opt/ambar/rabbit:/var/lib/rabbitmq
+  redis:
+    restart: always
+    sysctls:
+      - net.core.somaxconn=1024
+    networks:
+      - internal_network
+    build: ./Redis
+    expose:
+      - "6379"
+  serviceapi:
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbit:
+        condition: service_healthy
+      es:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: always
+    networks:
+      - internal_network
+    build: ./ServiceApi
+    expose:
+      - "8081"
+    environment:
+      - mongoDbUrl=mongodb://db:27017/ambar_data
+      - elasticSearchUrl=http://es:9200
+      - redisHost=redis
+      - redisPort=6379
+      - rabbitHost=amqp://rabbit
+      - langAnalyzer=ambar_ru
+      - SLAO_HOSTNAME=ambar
+      - SLAO_API_KEY=
+  webapi:
+    depends_on:
+      serviceapi:
+        condition: service_healthy
+    restart: always
+    networks:
+      - internal_network
+    image: repo.ambar.cloud:443/ambar-webapi:2.1
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+    environment:            
+      - uiLang=ru
+      - mongoDbUrl=mongodb://db:27017/ambar_data
+      - elasticSearchUrl=http://es:9200
+      - redisHost=redis
+      - redisPort=6379
+      - serviceApiUrl=http://serviceapi:8081
+      - rabbitHost=amqp://rabbit  
+      - SLAO_HOSTNAME=ambar
+      - SLAO_API_KEY=
+  pipeline0:
+    depends_on:
+      serviceapi:
+        condition: service_healthy
+    build: ./Pipeline
+    restart: always
+    networks:
+      - internal_network
+    environment:
+      - id=0
+      - api_url=http://serviceapi:8081
+      - rabbit_host=amqp://rabbit
+      - ocrPdfMaxPageCount=-1
+  mysource:
+    depends_on:
+      serviceapi:
+        condition: service_healthy
+    build: ./LocalCrawler
+    restart: always
+    networks:
+      - internal_network
+    expose:
+      - "8082"
+    environment:
+      - name=mysource
+    volumes:
+      - /opt/ambar/sources:/usr/data
+  frontend:
+    depends_on:
+      webapi:
+        condition: service_healthy
+    build: ./FrontEnd
+    restart: always
+    networks:
+      - internal_network
+    ports:
+      - "3000:80"
+    expose:
+      - "3000"
+    environment:
+      - api={ip}:3000
