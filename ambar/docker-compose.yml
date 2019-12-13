@@ -1,59 +1,59 @@
 version: "2.1"
 networks:
   internal_network:
-services:    
+services:      
   db:
     restart: always
     networks:
       - internal_network
-    build: ./MongoDB
+    image: ambar_mongodb
     environment:
       - cacheSizeGB=2
     volumes:
-      - /opt/ambar/db:/data/db
+      - /home/yallz/ambar/db:/data/db
     expose:
-      - "27017"
+      - "27017"   
   es:
     restart: always
     networks:
       - internal_network
-    build: ./ElasticSearch
+    image: ambar_es
     expose:
-      - "9200"
+      - "9200" 
     environment:
-      - cluster.name=ambar-es
+      - cluster.name=ambar_es
       - ES_JAVA_OPTS=-Xms2g -Xmx2g
     ulimits:
       memlock:
         soft: -1
-        hard: -1
+        hard: -1  
       nofile:
         soft: 65536
         hard: 65536
     cap_add:
       - IPC_LOCK
     volumes:
-      - /opt/ambar/es:/usr/share/elasticsearch/data
+      - /home/yallz/ambar/es:/usr/share/elasticsearch/data
   rabbit:
     restart: always
     networks:
       - internal_network
-    build: ./Rabbit
+    image: ambar_rabbit
     hostname: rabbit
     expose:
       - "15672"
-      - "5672"
+      - "5672"   
     volumes:
-      - /opt/ambar/rabbit:/var/lib/rabbitmq
+      - /home/yallz/ambar/rabbit:/var/lib/rabbitmq
   redis:
     restart: always
     sysctls:
       - net.core.somaxconn=1024
     networks:
       - internal_network
-    build: ./Redis
+    image: ambar_redis
     expose:
-      - "6379"
+      - "6379" 
   serviceapi:
     depends_on:
       redis:
@@ -67,17 +67,17 @@ services:
     restart: always
     networks:
       - internal_network
-    build: ./ServiceApi
+    image: ambar_serviceapi
     expose:
-      - "8081"
-    environment:
+      - "8081"  
+    environment:            
       - mongoDbUrl=mongodb://db:27017/ambar_data
       - elasticSearchUrl=http://es:9200
       - redisHost=redis
       - redisPort=6379
       - rabbitHost=amqp://rabbit
-      - langAnalyzer=ambar_ru
-      - SLAO_HOSTNAME=ambar
+      - langAnalyzer=ambar_ru  
+      - SLAO_HOSTNAME=ambar 
       - SLAO_API_KEY=
   webapi:
     depends_on:
@@ -86,53 +86,26 @@ services:
     restart: always
     networks:
       - internal_network
-    build: ./WebApi
+    image: ambar_webapi
     expose:
       - "8080"
     ports:
       - "8080:8080"
-    environment:
+    environment:            
       - uiLang=en
       - mongoDbUrl=mongodb://db:27017/ambar_data
       - elasticSearchUrl=http://es:9200
       - redisHost=redis
       - redisPort=6379
       - serviceApiUrl=http://serviceapi:8081
-      - rabbitHost=amqp://rabbit
+      - rabbitHost=amqp://rabbit  
       - SLAO_HOSTNAME=ambar
-      - SLAO_API_KEY=
-  pipeline0:
-    depends_on:
-      serviceapi:
-        condition: service_healthy
-    build: ./Pipeline
-    restart: always
-    networks:
-      - internal_network
-    environment:
-      - id=0
-      - api_url=http://serviceapi:8081
-      - rabbit_host=amqp://rabbit
-      - ocrPdfMaxPageCount=-1
-  mysource:
-    depends_on:
-      serviceapi:
-        condition: service_healthy
-    build: ./LocalCrawler
-    restart: always
-    networks:
-      - internal_network
-    expose:
-      - "8082"
-    environment:
-      - name=mysource
-    volumes:
-      - /opt/ambar/sources:/usr/data
+      - SLAO_API_KEY=  
   frontend:
     depends_on:
       webapi:
         condition: service_healthy
-    build: ./FrontEnd
+    image: ambar_frontend
     restart: always
     networks:
       - internal_network
@@ -141,4 +114,30 @@ services:
     expose:
       - "3000"
     environment:
-      - api={ip}:3000
+      - api={ip}:8080  
+  pipeline0:
+    depends_on: 
+      serviceapi: 
+        condition: service_healthy                            
+    image: ambar_pipeline
+    restart: always
+    networks:
+      - internal_network  
+    environment:                
+      - id=0
+      - api_url=http://serviceapi:8081
+      - rabbit_host=amqp://rabbit
+  mysource:
+    depends_on: 
+      serviceapi: 
+        condition: service_healthy 
+    image: ambar_local-crawler
+    restart: always
+    networks:
+      - internal_network
+    expose:
+      - "8082"
+    environment:      
+      - name=mysource
+    volumes:
+      - /mnt/ttn_share:/usr/data
